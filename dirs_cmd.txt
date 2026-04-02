@@ -1,0 +1,65 @@
+.git
+22 (1)
+22 (1)(1)
+accounting-service
+almacen
+app
+appincl
+appuniv
+app_garajes
+app_transporte
+assets
+backend
+backend_garajes
+bootstrap
+carrito
+carrito_provider_sqlite
+fotos
+front
+Front%20End%20SciBol
+Front-End-SciBol
+gateway-service
+html
+hyy
+iguyhbj
+jbjdnw
+legacy-web-petstore
+M1ProyectoBackEnd
+M1ProyectoFrontEnd
+mapa
+MiPrimerAppMVC
+MiProyectoMVC
+mock
+monolito-transaccional-main
+motel
+musica chill
+Nueva carpeta (2)
+orchestrator-service
+pantallas
+perfecto
+pinguionos
+Podcast personajes
+pomscams
+Portal.Launcher
+Proyecto dispMovilesAdvnc
+proyectoAppInclusiva
+ProyectoSeguridad
+prueba
+sala
+sales-service
+server
+servidor
+SICOIN
+Solucion
+test
+UnivBackend
+videacos para p£blicar
+videos demostracion
+videos horizontal
+Videos trip
+videos vertical
+views
+Vistas
+warehouse-service
+WebApplication1
+_pgbackup
