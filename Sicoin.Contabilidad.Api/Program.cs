@@ -25,6 +25,9 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<ContabilidadDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("ContaDb")));
 
+// Fix DI: Register IContabilidadDbContext
+builder.Services.AddScoped<IContabilidadDbContext>(provider => provider.GetRequiredService<ContabilidadDbContext>());
+
 // Register Services
 builder.Services.AddScoped<IPlanCuentaService, PlanCuentaService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();

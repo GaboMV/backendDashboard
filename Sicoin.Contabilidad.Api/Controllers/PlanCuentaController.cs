@@ -32,10 +32,17 @@ public class PlanCuentaController : ControllerBase
     }
 
     [HttpGet("tree/{empresaId:guid}")]
-    public async Task<IActionResult> GetTree(Guid empresaId)
+    public async Task<IActionResult> GetTree(Guid empresaId, [FromQuery] string? q = null)
     {
-        var tree = await _planCuentaService.GetTreeAsync(empresaId);
-        return Ok(tree);
+        try
+        {
+            var tree = await _planCuentaService.GetTreeAsync(empresaId, q);
+            return Ok(tree);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { Message = ex.Message, StackTrace = ex.StackTrace });
+        }
     }
 
     [HttpGet("{planId}")]

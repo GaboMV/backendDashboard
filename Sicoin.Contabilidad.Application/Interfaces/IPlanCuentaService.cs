@@ -11,5 +11,5 @@ public interface IPlanCuentaService
     Task<PlanCuenta> CreateAsync(PlanCuenta account);
     Task<PlanCuentaDetailDto> GetByIdAsync(long planId, Guid empresaId);
     Task<PlanCuenta> UpdateAsync(PlanCuenta account);
-    Task<List<PlanCuentaDto>> GetTreeAsync(Guid empresaId);
+    Task<List<PlanCuentaDto>> GetTreeAsync(Guid empresaId, string? filter = null);
 }

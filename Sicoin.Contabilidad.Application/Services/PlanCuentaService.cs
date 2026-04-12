@@ -72,14 +72,42 @@ public class PlanCuentaService : IPlanCuentaService
         return account;
     }
 
-    public async Task<List<PlanCuentaDto>> GetTreeAsync(Guid empresaId)
+    public async Task<List<PlanCuentaDto>> GetTreeAsync(Guid empresaId, string? filter = null)
     {
-        var allAccounts = await _context.PlanesCuentas
-            .Where(p => p.EmpresaId == empresaId)
+        var query = _context.PlanesCuentas
+            .Where(p => p.EmpresaId == empresaId);
+
+        var allAccounts = await query
             .OrderBy(p => p.Codigo)
             .ToListAsync();
 
-        var dtos = allAccounts.Select(a => new PlanCuentaDto
+        IEnumerable<PlanCuenta> filteredAccounts = allAccounts;
+
+        if (!string.IsNullOrWhiteSpace(filter))
+        {
+            var search = filter.ToLower();
+            var matches = allAccounts.Where(a => 
+                a.Nombre.ToLower().Contains(search) || 
+                a.Codigo.ToLower().Contains(search))
+                .ToList();
+
+            // Trace up to include all ancestors of matching accounts
+            var includedIds = new HashSet<long>();
+            foreach (var match in matches)
+            {
+                var current = match;
+                while (current != null)
+                {
+                    if (!includedIds.Add(current.PlanId)) break; // Already included
+                    current = current.PlanPadreId.HasValue 
+                        ? allAccounts.FirstOrDefault(a => a.PlanId == current.PlanPadreId.Value) 
+                        : null;
+                }
+            }
+            filteredAccounts = allAccounts.Where(a => includedIds.Contains(a.PlanId));
+        }
+
+        var dtos = filteredAccounts.Select(a => new PlanCuentaDto
         {
             PlanId = a.PlanId,
             Codigo = a.Codigo,
@@ -90,15 +118,19 @@ public class PlanCuentaService : IPlanCuentaService
             SaldoNormalDescripcion = a.SaldoNormalDescripcion
         }).ToList();
 
-        var rootNodes = dtos.Where(d => d.Nivel == 1).ToList();
         var dict = dtos.ToDictionary(d => d.PlanId);
+        var rootNodes = new List<PlanCuentaDto>();
 
-        foreach (var account in allAccounts.Where(a => a.PlanPadreId.HasValue))
+        foreach (var dto in dtos)
         {
-            if (dict.TryGetValue(account.PlanPadreId!.Value, out var parentDto) && 
-                dict.TryGetValue(account.PlanId, out var childDto))
+            var original = allAccounts.First(a => a.PlanId == dto.PlanId);
+            if (original.PlanPadreId.HasValue && dict.TryGetValue(original.PlanPadreId.Value, out var parentDto))
             {
-                parentDto.Children.Add(childDto);
+                parentDto.Children.Add(dto);
+            }
+            else
+            {
+                rootNodes.Add(dto);
             }
         }
 
