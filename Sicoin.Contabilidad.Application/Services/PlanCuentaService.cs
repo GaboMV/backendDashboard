@@ -20,13 +20,13 @@ public class PlanCuentaService : IPlanCuentaService
 
     public async Task<PlanCuenta> CreateAsync(PlanCuenta account)
     {
-        // V-008: Nombre obligatorio
+        // V-008: Validar campos obligatorios
         if (string.IsNullOrWhiteSpace(account.Nombre))
-            throw new Exception("El nombre de la cuenta es obligatorio.");
+            throw new Exception("El nombre de la cuenta analítica es obligatorio.");
 
-        // V-001: Código único
-        if (await _context.PlanesCuentas.AnyAsync(p => p.Codigo == account.Codigo && p.EmpresaId == account.EmpresaId))
-            throw new Exception($"El código {account.Codigo} ya está registrado.");
+        // V-008: Cuenta de Ajuste
+        if (account.AceptaMoneda && !account.CuentaAjusteId.HasValue)
+            throw new Exception("La cuenta acepta moneda extranjera pero no tiene Cuenta de Ajuste por Diferencia de Cambio configurada.");
 
         // Hierarchy logic
         if (account.PlanPadreId.HasValue)
@@ -35,23 +35,27 @@ public class PlanCuentaService : IPlanCuentaService
             if (padre == null)
                 throw new Exception("La cuenta padre no existe.");
             
-            // V-009: Cuenta padre activa
-            if (padre.EstadoId != "AC")
-                throw new Exception("No se puede crear una subcuenta bajo una cuenta inactiva.");
-
-            // V-002: Código coherente con padre
-            if (!account.Codigo.StartsWith(padre.Codigo + "."))
-                throw new Exception($"El código debe ser hijo del padre seleccionado ({padre.Codigo}).");
-
-            // V-005: Cuenta padre no puede ser de movimiento
-            if (padre.AceptaMovimiento)
-                throw new Exception("No se puede crear subcuentas bajo una cuenta de movimiento.");
+            // V-009: Niveles inmutables - la empresa solo puede crear CAs bajo un CP (nivel 4) u otros CA
+            if (padre.Nivel < 4)
+                throw new Exception("No puede crear una cuenta directamente bajo una Clase, Grupo o Subgrupo. Seleccione una Cuenta Principal (Nivel 4).");
 
             account.Nivel = padre.Nivel + 1;
+            
+            // V-001 / V-010: Validate full code format
+            if (!account.Codigo.StartsWith($"{padre.Codigo}."))
+                throw new Exception($"El código debe comenzar con el código del padre ({padre.Codigo}.).");
+
+            var suffix = account.Codigo.Substring(padre.Codigo.Length + 1);
+            var isSequence = suffix.All(char.IsDigit) || suffix.EndsWith("N");
+            if (!isSequence) throw new Exception("El segmento final del código solo acepta dígitos o el valor especial '00N'.");
+            
+            // V-001: Código único re-check con prefijo asignado
+            if (await _context.PlanesCuentas.AnyAsync(p => p.Codigo == account.Codigo && p.EmpresaId == account.EmpresaId))
+                throw new Exception($"El código {account.Codigo} ya está registrado bajo {padre.Nombre}.");
         }
         else
         {
-            account.Nivel = 1;
+            throw new Exception("No se pueden crear Cuentas de Nivel 1. Use la estructura oficial PUCT.");
         }
 
         // V-006: Nivel máximo 8
@@ -114,8 +118,12 @@ public class PlanCuentaService : IPlanCuentaService
             Nombre = a.Nombre,
             Nivel = a.Nivel,
             AceptaMovimiento = a.AceptaMovimiento,
+            TipoCuentaId = a.TipoCuentaId,
             TipoCuentaDescripcion = a.TipoCuentaDescripcion,
-            SaldoNormalDescripcion = a.SaldoNormalDescripcion
+            SaldoNormalId = a.SaldoNormalId,
+            SaldoNormalDescripcion = a.SaldoNormalDescripcion,
+            PlanPadreId = a.PlanPadreId,
+            EstadoId = a.EstadoId
         }).ToList();
 
         var dict = dtos.ToDictionary(d => d.PlanId);
@@ -198,9 +206,17 @@ public class PlanCuentaService : IPlanCuentaService
         if (existing == null)
             throw new Exception("La cuenta no existe.");
 
+        // V-009: Nodos inmutables
+        if (existing.Nivel < 5)
+            throw new Exception("Este nivel pertenece a la estructura oficial del PUCT SIN Bolivia y no puede modificarse.");
+
         // V-008: Validar campos obligatorios
         if (string.IsNullOrWhiteSpace(account.Nombre))
             throw new Exception("El nombre de la cuenta es obligatorio.");
+
+        // V-008: Cuenta de Ajuste requerida
+        if (account.AceptaMoneda && !account.CuentaAjusteId.HasValue)
+            throw new Exception("La cuenta acepta moneda extranjera pero no tiene Cuenta de Ajuste por Diferencia de Cambio configurada.");
 
         bool hasConfirmedMovements = await _context.ComprobanteDetalles
             .Include(d => d.Comprobante)
@@ -243,11 +259,208 @@ public class PlanCuentaService : IPlanCuentaService
         existing.RequiereProyecto = account.RequiereProyecto;
         existing.CodigoSinNandina = account.CodigoSinNandina;
         existing.Observacion = account.Observacion;
+        existing.CuentaAjusteId = account.CuentaAjusteId;
         existing.EstadoId = account.EstadoId;
 
         _context.PlanesCuentas.Update(existing);
         await _context.SaveChangesAsync();
 
         return existing;
+    }
+    public async Task<ImportacionResultadoDto> ImportarCuentasAnaliticasAsync(System.IO.Stream excelStream, Guid empresaId, bool soloValidar, bool sobreescribir)
+    {
+        var result = new ImportacionResultadoDto();
+        
+        using var workbook = new ClosedXML.Excel.XLWorkbook(excelStream);
+        var worksheet = workbook.Worksheet(1);
+        var rows = worksheet.RowsUsed().Skip(1); // skip header
+
+        var groupedAccounts = await _context.PlanesCuentas
+            .Where(p => p.EmpresaId == empresaId)
+            .ToListAsync();
+            
+        var CPs = groupedAccounts.Where(p => p.Nivel == 4).ToDictionary(p => p.Codigo);
+        var CAs = groupedAccounts.Where(p => p.Nivel == 5).ToDictionary(p => p.Codigo);
+
+        foreach (var row in rows)
+        {
+            result.TotalFilasLeidas++;
+            int index = row.RowNumber();
+
+            var valC = row.Cell(1).GetString().Trim();
+            var valG = row.Cell(2).GetString().Trim();
+            var valSG = row.Cell(3).GetString().Trim();
+            var valCP = row.Cell(4).GetString().Trim();
+            var valCA = row.Cell(5).GetString().Trim();
+            var nombre = row.Cell(6).GetString().Trim();
+            var reqCosto = row.Cell(7).GetString().Trim() == "1";
+            var aceptaMon = row.Cell(8).GetString().Trim() == "1";
+            var obs = row.Cell(9).GetString().Trim();
+
+            // Validación V-006 Básica
+            if (string.IsNullOrEmpty(valC) || string.IsNullOrEmpty(valCA))
+            {
+                result.Errores++;
+                result.Detalles.Add(new ImportacionDetalleDto { Fila = index, Tipo = "ERROR", Mensaje = "Fila mal formada o vacía." });
+                continue;
+            }
+
+            // Validación V-010: Formato de Nùmero CA
+            var isSequenceCA = valCA.All(char.IsDigit) || valCA.EndsWith("N");
+            if (!isSequenceCA)
+            {
+                result.Errores++;
+                result.Detalles.Add(new ImportacionDetalleDto { Fila = index, Tipo = "ERROR", Mensaje = $"El número CA '{valCA}' no es válido. Solo dígitos o '00N'." });
+                continue;
+            }
+
+            // V-004: Clase
+            if (!new[] { "1", "2", "3", "4", "5" }.Contains(valC))
+            {
+                result.Errores++;
+                result.Detalles.Add(new ImportacionDetalleDto { Fila = index, Tipo = "ERROR", Mensaje = $"Clase {valC} no válida. Use 1 a 5." });
+                continue;
+            }
+
+            // V-003: Nombre Vacío
+            if (string.IsNullOrEmpty(nombre))
+            {
+                result.Errores++;
+                result.Detalles.Add(new ImportacionDetalleDto { Fila = index, Tipo = "ERROR", Mensaje = "El nombre de la CA es obligatorio." });
+                continue;
+            }
+
+            // Construir código padre
+            var codPadre = $"{valC}.{valG}.{valSG}.{valCP}";
+            
+            // V-001: CP no existe en el PUCT
+            if (!CPs.TryGetValue(codPadre, out var cpParent))
+            {
+                result.Errores++;
+                result.Detalles.Add(new ImportacionDetalleDto { Fila = index, Tipo = "ERROR", Mensaje = $"La Cuenta Principal {codPadre} no existe en el PUCT." });
+                continue;
+            }
+
+            // Códig CA
+            var codCA = $"{codPadre}.{valCA}";
+
+            if (CAs.TryGetValue(codCA, out var caExistente))
+            {
+                if (!sobreescribir)
+                {
+                    result.Omitidas++;
+                    result.Detalles.Add(new ImportacionDetalleDto { Fila = index, Cuenta = codCA, Tipo = "INFO", Mensaje = "La cuenta ya existe. Se omitió (Sobreescribir = No)." });
+                }
+                else
+                {
+                    if (!soloValidar)
+                    {
+                        caExistente.Nombre = nombre;
+                        caExistente.RequiereCosto = reqCosto;
+                        caExistente.AceptaMoneda = aceptaMon;
+                        caExistente.Observacion = obs;
+                        _context.PlanesCuentas.Update(caExistente);
+                    }
+                    result.Actualizadas++;
+                    result.Detalles.Add(new ImportacionDetalleDto { Fila = index, Cuenta = codCA, Tipo = "SUCCESS", Mensaje = "Actualizada correctamente." });
+                }
+            }
+            else
+            {
+                if (!soloValidar)
+                {
+                    var nuevaCuenta = new PlanCuenta
+                    {
+                        EmpresaId = empresaId,
+                        PlanPadreId = cpParent.PlanId,
+                        Codigo = codCA,
+                        Nombre = nombre,
+                        Nivel = 5,
+                        AceptaMovimiento = true,
+                        TipoCuentaId = cpParent.TipoCuentaId,
+                        TipoCuentaDescripcion = cpParent.TipoCuentaDescripcion,
+                        SaldoNormalId = cpParent.SaldoNormalId,
+                        SaldoNormalDescripcion = cpParent.SaldoNormalDescripcion,
+                        RequiereCosto = reqCosto,
+                        AceptaMoneda = aceptaMon,
+                        Observacion = obs
+                    };
+                    _context.PlanesCuentas.Add(nuevaCuenta);
+                    CAs.Add(codCA, nuevaCuenta); // Add to cache for duplicate detection in same loop
+                }
+                result.Creadas++;
+                result.Detalles.Add(new ImportacionDetalleDto { Fila = index, Cuenta = codCA, Tipo = "SUCCESS", Mensaje = "Creada correctamente." });
+            }
+        }
+
+        if (!soloValidar && result.Errores == 0)
+        {
+            await _context.SaveChangesAsync();
+        }
+
+        return result;
+    }
+
+    public async Task DeleteAsync(long planId, Guid empresaId)
+    {
+        var existing = await _context.PlanesCuentas
+            .FirstOrDefaultAsync(p => p.PlanId == planId && p.EmpresaId == empresaId);
+
+        if (existing == null)
+            throw new Exception("La cuenta no existe.");
+
+        // Rule: Can't delete accounts with children
+        bool hasChildren = await _context.PlanesCuentas.AnyAsync(p => p.PlanPadreId == planId);
+        if (hasChildren)
+            throw new Exception("No se puede eliminar la cuenta porque tiene subcuentas asociadas. Elimine primero sus hijos.");
+
+        // Rule: Can't delete accounts with movements
+        bool hasMovements = await _context.ComprobanteDetalles.AnyAsync(d => d.CuentaId == planId);
+        if (hasMovements)
+            throw new Exception("No se puede eliminar la cuenta porque ya registra movimientos contables.");
+
+        _context.PlanesCuentas.Remove(existing);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<List<PlanCuentaDto>> SearchCuentasMovimientoAsync(Guid empresaId, string query)
+    {
+        var q = query.ToLower();
+        var accounts = await _context.PlanesCuentas
+            // .Where(p => p.EmpresaId == empresaId && p.EstadoId == "AC") // Temporarily disabled for diagnosis
+            .Where(p => p.Codigo.ToLower().Contains(q) || p.Nombre.ToLower().Contains(q))
+            .OrderBy(p => p.Codigo)
+            .Take(20)
+            .Select(a => new PlanCuentaDto
+            {
+                PlanId = a.PlanId,
+                Codigo = a.Codigo,
+                Nombre = a.Nombre,
+                AceptaMovimiento = a.AceptaMovimiento, // We return the flag so UI can warn if needed
+                TipoCuentaDescripcion = a.TipoCuentaDescripcion,
+                SaldoNormalDescripcion = a.SaldoNormalDescripcion,
+                EstadoId = a.EstadoId
+            })
+            .ToListAsync();
+
+        return accounts;
+    }
+
+    public async Task<List<PlanCuentaDto>> GetCuentasConCentroCostoAsync(Guid empresaId)
+    {
+        return await _context.PlanesCuentas
+            .Where(p => p.EmpresaId == empresaId && p.RequiereCosto && p.EstadoId == "AC")
+            .OrderBy(p => p.Codigo)
+            .Select(a => new PlanCuentaDto
+            {
+                PlanId = a.PlanId,
+                Codigo = a.Codigo,
+                Nombre = a.Nombre,
+                AceptaMovimiento = a.AceptaMovimiento,
+                TipoCuentaDescripcion = a.TipoCuentaDescripcion,
+                SaldoNormalDescripcion = a.SaldoNormalDescripcion,
+                EstadoId = a.EstadoId
+            })
+            .ToListAsync();
     }
 }

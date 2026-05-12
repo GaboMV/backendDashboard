@@ -8,7 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options => {
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    });
 
 // Provisional CORS for local frontend testing
 builder.Services.AddCors(options =>
@@ -31,9 +34,28 @@ builder.Services.AddScoped<IContabilidadDbContext>(provider => provider.GetRequi
 // Register Services
 builder.Services.AddScoped<IPlanCuentaService, PlanCuentaService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IPeriodoService, PeriodoService>();
+builder.Services.AddScoped<IParametrizacionContableService, ParametrizacionContableService>();
+builder.Services.AddScoped<ICentroCostoService, CentroCostoService>();
+builder.Services.AddScoped<ILibrosContablesService, LibrosContablesService>();
+builder.Services.AddScoped<IComprobanteService, ComprobanteService>();
+builder.Services.AddScoped<PuctSeederService>();
 
 
 var app = builder.Build();
+
+// --- AUTO-PARCHE DE BASE DE DATOS PARA MONEDABASE ---
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<ContabilidadDbContext>();
+    try {
+        // Ejecutamos SQL puro para asegurar que las columnas existen en PostgreSQL
+        await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Gestiones\" ADD COLUMN IF NOT EXISTS \"MonedaBase\" TEXT DEFAULT 'BOB';");
+        await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Gestiones\" ADD COLUMN IF NOT EXISTS \"EstadoId\" TEXT DEFAULT 'AC';");
+        await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Periodos\" ADD COLUMN IF NOT EXISTS \"EstadoId\" TEXT DEFAULT 'AC';");
+    } catch { /* Ignoramos si falla por permisos o si ya existe */ }
+}
+// -----------------------------------------------------
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

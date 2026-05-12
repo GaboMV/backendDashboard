@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Sicoin.Contabilidad.Application.Interfaces;
 using Sicoin.Contabilidad.Domain.Entities;
-using Sicoin.Contabilidad.Domain.Entities;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,6 +15,10 @@ public class ContabilidadDbContext : DbContext, IContabilidadDbContext
     public DbSet<PlanCuenta> PlanesCuentas { get; set; }
     public DbSet<Comprobante> Comprobantes { get; set; }
     public DbSet<ComprobanteDetalle> ComprobanteDetalles { get; set; }
+    public DbSet<Gestion> Gestiones { get; set; }
+    public DbSet<Periodo> Periodos { get; set; }
+    public DbSet<ParametroContable> ParametrosContables { get; set; }
+    public DbSet<CentroCosto> CentrosCosto { get; set; }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -33,6 +36,26 @@ public class ContabilidadDbContext : DbContext, IContabilidadDbContext
             entity.HasMany(e => e.PlanesCuentasHijos)
                 .WithOne()
                 .HasForeignKey(e => e.PlanPadreId);
+
+            entity.HasOne(e => e.CuentaAjuste)
+                .WithMany()
+                .HasForeignKey(e => e.CuentaAjusteId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Gestion>(entity =>
+        {
+            entity.HasKey(e => e.GestionId);
+            
+            entity.HasMany(e => e.Periodos)
+                .WithOne(p => p.Gestion)
+                .HasForeignKey(p => p.GestionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Periodo>(entity =>
+        {
+            entity.HasKey(e => e.PeriodoId);
         });
 
         modelBuilder.Entity<Comprobante>(entity =>
@@ -52,6 +75,21 @@ public class ContabilidadDbContext : DbContext, IContabilidadDbContext
             entity.HasOne(d => d.PlanCuenta)
                 .WithMany()
                 .HasForeignKey(d => d.CuentaId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ParametroContable>(entity =>
+        {
+            entity.HasKey(e => e.ParametroId);
+        });
+
+        modelBuilder.Entity<CentroCosto>(entity =>
+        {
+            entity.HasKey(e => e.CentroCostoId);
+            
+            entity.HasOne(e => e.CentroPadre)
+                .WithMany(e => e.CentrosHijos)
+                .HasForeignKey(e => e.CentroPadreId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

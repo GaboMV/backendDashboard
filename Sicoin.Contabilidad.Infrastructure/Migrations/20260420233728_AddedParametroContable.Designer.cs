@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Sicoin.Contabilidad.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using Sicoin.Contabilidad.Infrastructure.Persistence;
 namespace Sicoin.Contabilidad.Infrastructure.Migrations
 {
     [DbContext(typeof(ContabilidadDbContext))]
-    partial class ContabilidadDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260420233728_AddedParametroContable")]
+    partial class AddedParametroContable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,63 +24,6 @@ namespace Sicoin.Contabilidad.Infrastructure.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("Sicoin.Contabilidad.Domain.Entities.CentroCosto", b =>
-                {
-                    b.Property<int>("CentroCostoId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("CentroCostoId"));
-
-                    b.Property<bool>("Activo")
-                        .HasColumnType("boolean");
-
-                    b.Property<int?>("CentroPadreId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Codigo")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("EmpresaId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("EstadoId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("FechaModificacion")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("FechaRegistro")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Nombre")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<decimal>("PresupuestoAnual")
-                        .HasColumnType("numeric");
-
-                    b.Property<string>("Responsable")
-                        .HasColumnType("text");
-
-                    b.Property<int>("TipoId")
-                        .HasColumnType("integer");
-
-                    b.Property<long?>("UsuarioModificacionId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("UsuarioRegistroId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("CentroCostoId");
-
-                    b.HasIndex("CentroPadreId");
-
-                    b.ToTable("CentrosCosto");
-                });
 
             modelBuilder.Entity("Sicoin.Contabilidad.Domain.Entities.Comprobante", b =>
                 {
@@ -417,10 +363,6 @@ namespace Sicoin.Contabilidad.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("codigo_sin_nandina");
 
-                    b.Property<long?>("CuentaAjusteId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("cuenta_ajuste_id");
-
                     b.Property<Guid>("EmpresaId")
                         .HasColumnType("uuid")
                         .HasColumnName("empresa_id");
@@ -506,21 +448,9 @@ namespace Sicoin.Contabilidad.Infrastructure.Migrations
 
                     b.HasKey("PlanId");
 
-                    b.HasIndex("CuentaAjusteId");
-
                     b.HasIndex("PlanPadreId");
 
                     b.ToTable("con_planes_cuentas");
-                });
-
-            modelBuilder.Entity("Sicoin.Contabilidad.Domain.Entities.CentroCosto", b =>
-                {
-                    b.HasOne("Sicoin.Contabilidad.Domain.Entities.CentroCosto", "CentroPadre")
-                        .WithMany("CentrosHijos")
-                        .HasForeignKey("CentroPadreId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("CentroPadre");
                 });
 
             modelBuilder.Entity("Sicoin.Contabilidad.Domain.Entities.ComprobanteDetalle", b =>
@@ -555,21 +485,9 @@ namespace Sicoin.Contabilidad.Infrastructure.Migrations
 
             modelBuilder.Entity("Sicoin.Contabilidad.Domain.Entities.PlanCuenta", b =>
                 {
-                    b.HasOne("Sicoin.Contabilidad.Domain.Entities.PlanCuenta", "CuentaAjuste")
-                        .WithMany()
-                        .HasForeignKey("CuentaAjusteId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("Sicoin.Contabilidad.Domain.Entities.PlanCuenta", null)
                         .WithMany("PlanesCuentasHijos")
                         .HasForeignKey("PlanPadreId");
-
-                    b.Navigation("CuentaAjuste");
-                });
-
-            modelBuilder.Entity("Sicoin.Contabilidad.Domain.Entities.CentroCosto", b =>
-                {
-                    b.Navigation("CentrosHijos");
                 });
 
             modelBuilder.Entity("Sicoin.Contabilidad.Domain.Entities.Comprobante", b =>

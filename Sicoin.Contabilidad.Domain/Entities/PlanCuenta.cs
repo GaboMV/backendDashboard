@@ -9,7 +9,7 @@ namespace Sicoin.Contabilidad.Domain.Entities;
 [Table("con_planes_cuentas")]
 public class PlanCuenta : AuditEntity
 {
-    [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
+    [Key, DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     [Column("plan_id")]
     public long PlanId { get; set; }
 
@@ -73,6 +73,12 @@ public class PlanCuenta : AuditEntity
 
     [Column("observacion")]
     public string? Observacion { get; set; }
+
+    [Column("cuenta_ajuste_id")]
+    public long? CuentaAjusteId { get; set; }
+
+    [ForeignKey("CuentaAjusteId")]
+    public virtual PlanCuenta? CuentaAjuste { get; set; }
 
     public virtual ICollection<PlanCuenta> PlanesCuentasHijos { get; set; } = new List<PlanCuenta>();
 }
